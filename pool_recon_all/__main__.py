@@ -30,13 +30,13 @@ logger = logging.getLogger(__file__)
 
 
 def worker_process(args: tuple):
+    """
+    Function to be called by the multiprocessing pool
+    """
+    nii_id, nii_path = args
 
-    nii_id, nii_path, descriptor_path = args
     # Mark worker start time and release memory
-    df_descr = pd.read_csv(descriptor_path, index_col="Image Data ID")
     start_t = time.strftime("%Y-%m-%d-%H:%M:%S")
-    df_descr.loc[nii_id, "time_start"] = start_t
-    df_descr.to_csv(descriptor_path)
 
     # Run recon-all
     logger.info("Started ID{} at {}".format(nii_id, start_t))
@@ -47,15 +47,18 @@ def worker_process(args: tuple):
 
     # Mark worker end time
     stop_t = time.strftime("%Y-%m-%d-%H:%M:%S")
-    df_descr.loc[nii_id, "time_stop"] = stop_t
     logger.info("Finished ID{} at {}".format(nii_id, stop_t))
+
+    return start_t, stop_t, nii_id
 
 
 @click.command()
 @click.option("--dataset-dir", "-d", type=str, required=True)
 @click.option("--output-dir", "-o", type=str, required=True)
 def recon(dataset_dir: str, output_dir: str):
-
+    """
+    Start the multiprocessing pool.
+    """
     dataset_dir = pathlib.Path(dataset_dir)
     output_dir = pathlib.Path(output_dir)
 
@@ -92,16 +95,20 @@ def recon(dataset_dir: str, output_dir: str):
     print(df_todo)
 
     args = (
-        (i, str(dataset_dir / df_todo.loc[i, "path"]), str(descriptor_file))
+        (i, str(dataset_dir / df_todo.loc[i, "path"]))
         for i in list(df_todo.index)
     )
 
     with multiprocessing.Pool(processes=12) as pool:
         with tqdm.tqdm(total=len(df_descr)) as pbar:
             pbar.update(len(df_descr) - len(df_todo))
-            for _ in pool.imap_unordered(worker_process, args):
+            for start_t, stop_t, nii_id in pool.imap_unordered(worker_process, args):
                 pbar.update(1)
+                df_descr.loc[nii_id, "time_start"] = start_t
+                df_descr.loc[nii_id, "time_stop"] = stop_t
+                df_descr.to_csv(str(descriptor_file))
 
 
+a = [(2, 1), (3,2)]
 if __name__ == "__main__":
     recon()
